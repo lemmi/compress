@@ -1,3 +1,4 @@
+// Package compress provides a middleware for compression via gzip and deflate.
 package compress
 
 import (
@@ -13,9 +14,13 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	compressMinLength = 256
-	compressMaxBuf    = 16 * 1024
+var (
+	// CompressMinLength is the lower bound for compression. Smaller files
+	// won't be compressed.
+	CompressMinLength = 256
+	// CompressMaxBuf is the upper bound for buffered compression. Larger files
+	// will be compressed on-the-fly.
+	CompressMaxBuf = 16 * 1024
 )
 
 // List of used header keys and values, because typing
@@ -110,7 +115,7 @@ func isCompressableType(hdr http.Header) bool {
 }
 func checkIsCompressable(code int, hdr http.Header) bool {
 	return code == http.StatusOK &&
-		getContentLength(hdr) >= compressMinLength && // Don't compress too small files, too much overhead TODO: find good MinBuffer
+		getContentLength(hdr) >= CompressMinLength && // Don't compress too small files, too much overhead TODO: find good MinBuffer
 		!checkHeaderHas(hdr, hdrTrailer) && // Don't know how to handle Trailers, does it matter?
 		!checkHeaderHas(hdr, hdrContentEncoding) && // Don't compress more than once
 		isCompressableType(hdr) // Check if Content is likely to be compressable
@@ -133,7 +138,7 @@ type compressResponseWriter struct {
 	level int
 
 	code int   // save code for when to write out buffered content
-	err  error // last occured error
+	err  error // last occurred error
 
 	wroteHeader bool // keep track whether header was written (see http.ResponseWriter)
 	isBuffered  bool // set when using buffer
@@ -157,8 +162,8 @@ func (crw *compressResponseWriter) WriteHeader(code int) {
 	hdr := crw.Header()
 
 	if checkIsCompressable(code, hdr) {
-		if getContentLength(hdr) < compressMaxBuf {
-			crw.buf.Grow(compressMaxBuf)
+		if getContentLength(hdr) < CompressMaxBuf {
+			crw.buf.Grow(CompressMaxBuf)
 			crw.w = &crw.buf
 			crw.code = code
 			crw.isBuffered = true
@@ -229,6 +234,18 @@ func (crw *compressResponseWriter) Close() error {
 	return crw.err
 }
 
+/*
+New wraps a http.Handler and adds compression via gzip or deflate to the
+response. The Middleware takes care to not compress twice and will only
+compress known mimetypes. Small responses will be buffered completely and
+the Content-Length header will be set accordingly. Large responses as well
+as responses with unknown length will be compressed on the fly.
+
+	...
+	log.Fatal(http.ListenAndServe(":8080", compress.New(http.DefaultServeMux))
+	...
+
+*/
 func New(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Look for gzip/deflate in Accept-Encoding
