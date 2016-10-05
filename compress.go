@@ -247,6 +247,11 @@ as responses with unknown length will be compressed on the fly.
 
 */
 func New(h http.Handler) http.Handler {
+	return NewLevel(h, flate.DefaultCompression)
+}
+
+// NewLevel allows to set the compression level. See compress/flate.
+func NewLevel(h http.Handler, level int) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Look for gzip/deflate in Accept-Encoding
 		comp := checkAcceptEncoding(r.Header)
@@ -256,7 +261,7 @@ func New(h http.Handler) http.Handler {
 			return
 		}
 
-		crw := newCompressResponseWriter(w, comp, flate.BestCompression)
+		crw := newCompressResponseWriter(w, comp, level)
 		defer func() {
 			// clean even in case h panics
 			if err := crw.Close(); err != nil {
